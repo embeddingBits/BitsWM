@@ -16,6 +16,27 @@ Display *display;
 Window root;
 Client *clients[MAX_WINDOWS];
 int num_clients = 0;
+int screen_width, screen_height;
+
+void tile_windows() {
+    if (num_clients == 0) return;
+
+    int window_height = screen_height / num_clients;
+    for (int i = 0; i < num_clients; i++) {
+        clients[i]->x = 0;
+        clients[i]->y = i * window_height;
+        clients[i]->width = screen_width;
+        clients[i]->height = window_height;
+        XConfigureWindow(display, clients[i]->window,
+                        CWX | CWY | CWWidth | CWHeight,
+                        &(XWindowChanges){
+                            .x = clients[i]->x,
+                            .y = clients[i]->y,
+                            .width = clients[i]->width,
+                            .height = clients[i]->height
+                        });
+    }
+}
 
 void add_window(Window w) {
     if (num_clients < MAX_WINDOWS) {
@@ -33,6 +54,7 @@ void add_window(Window w) {
                     PropertyChangeMask | StructureNotifyMask);
         XMapWindow(display, w);
         num_clients++;
+        tile_windows();  // Re-tile after adding a new window
     }
 }
 
@@ -42,6 +64,7 @@ void remove_window(Window w) {
             free(clients[i]);
             clients[i] = clients[num_clients - 1];
             num_clients--;
+            tile_windows();  // Re-tile after removing a window
             break;
         }
     }
@@ -87,8 +110,9 @@ void handle_mouse_resize(XButtonEvent *ev) {
         if (event.type == MotionNotify) {
             int new_width = attr.width + (event.xmotion.x_root - x_start);
             int new_height = attr.height + (event.xmotion.y_root - y_start);
-            if (new_width > 50 && new_height > 50) {  // Minimum size
+            if (new_width > 50 && new_height > 50) {
                 resize_window(w, attr.x, attr.y, new_width, new_height);
+                // After manual resize, we might want to disable auto-tiling temporarily
             }
         }
     } while (event.type != ButtonRelease);
@@ -99,7 +123,6 @@ void handle_mouse_resize(XButtonEvent *ev) {
 void launch_kitty() {
     if (fork() == 0) {
         execlp("kitty", "kitty", NULL);
-        // If execlp fails
         perror("Failed to launch kitty");
         exit(1);
     }
@@ -113,6 +136,10 @@ int main() {
     }
 
     root = DefaultRootWindow(display);
+    Screen *screen = DefaultScreenOfDisplay(display);
+    screen_width = WidthOfScreen(screen);
+    screen_height = HeightOfScreen(screen);
+
     XSelectInput(display, root, SubstructureRedirectMask | 
                 SubstructureNotifyMask | KeyPressMask | ButtonPressMask);
     
@@ -123,7 +150,6 @@ int main() {
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_Down), Mod1Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
-    // Windows key (Mod4Mask) + Q to launch kitty
     XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
     
@@ -188,6 +214,7 @@ int main() {
                     wc.stack_mode = ev.xconfigurerequest.detail;
                     XConfigureWindow(display, ev.xconfigurerequest.window,
                                    ev.xconfigurerequest.value_mask, &wc);
+                    tile_windows();  // Re-tile after configure request
                 }
                 break;
         }
