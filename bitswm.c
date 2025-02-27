@@ -14,7 +14,14 @@
 #define NUM_WORKSPACES 4
 #define NORD0 0x2E3440  // Background color
 #define NORD4 0xD8DEE9  // Text color
-#define NORD8 0x  // Active workspace color (cyan)
+#define NORD8 0xBF616A  // Active workspace color (cyan)
+
+const char *WORKSPACE_LOGOS[] = {
+    "   ",  
+    "󰈹   ",  
+    "   ",  
+    "   "  
+};
 
 typedef struct {
     Window window;
@@ -30,8 +37,8 @@ int screen_width, screen_height;
 int current_workspace = 0;
 XftFont *status_font;
 XftDraw *xft_draw;
-XftColor xft_color;       // Regular text color (NORD4)
-XftColor xft_active_color; // Active workspace color (NORD8)
+XftColor xft_color;
+XftColor xft_active_color;
 
 void create_status_bar() {
     status_bar = XCreateSimpleWindow(display, root, GAP, GAP, screen_width - 2 * GAP, BAR_HEIGHT,
@@ -51,10 +58,10 @@ void create_status_bar() {
                             DefaultColormap(display, DefaultScreen(display)));
     XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
                      DefaultColormap(display, DefaultScreen(display)),
-                     "#D8DEE9", &xft_color);  // Regular text color
+                     "#D8DEE9", &xft_color);
     XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
                      DefaultColormap(display, DefaultScreen(display)),
-                     "#BF616A", &xft_active_color);  // Active workspace color
+                     "#BF616A", &xft_active_color);
 }
 
 void tile_windows() {
@@ -270,6 +277,15 @@ void launch_rofi() {
     }
 }
 
+void kill_active_window() {
+    Window focused;
+    int revert;
+    XGetInputFocus(display, &focused, &revert);
+    if (focused != None && focused != root) {
+        XKillClient(display, focused);
+    }
+}
+
 void switch_workspace(int new_workspace) {
     if (new_workspace >= 0 && new_workspace < NUM_WORKSPACES) {
         current_workspace = new_workspace;
@@ -282,24 +298,23 @@ void update_status_bar() {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
-    int battery = 75;  // Placeholder
-    int volume = 50;   // Placeholder
+    int battery = 75;
+    int volume = 50;
     
     snprintf(status, sizeof(status), "%d%% | Vol: %d%% | %02d:%02d",
              battery, volume, t->tm_hour, t->tm_min);
     
     XClearWindow(display, status_bar);
     
-    // Draw workspaces
+    // Draw workspace logos
     int x_offset = 10;
     for (int i = 0; i < NUM_WORKSPACES; i++) {
-        char ws[8];
-        snprintf(ws, sizeof(ws), "[%d] ", i + 1);
+        const char *logo = WORKSPACE_LOGOS[i];
         XftColor *color = (i == current_workspace) ? &xft_active_color : &xft_color;
         XftDrawStringUtf8(xft_draw, color, status_font, x_offset, BAR_HEIGHT - 6,
-                         (FcChar8 *)ws, strlen(ws));
+                         (FcChar8 *)logo, strlen(logo));
         XGlyphInfo extents;
-        XftTextExtentsUtf8(display, status_font, (FcChar8 *)ws, strlen(ws), &extents);
+        XftTextExtentsUtf8(display, status_font, (FcChar8 *)logo, strlen(logo), &extents);
         x_offset += extents.width;
     }
     
@@ -351,7 +366,9 @@ int main() {
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_f), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
-    XGrabKey(display, XKeysymToKeycode(display, XK_r), Mod4Mask,  // Win+r for Rofi
+    XGrabKey(display, XKeysymToKeycode(display, XK_r), Mod4Mask,
+            root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_k), Mod4Mask,
             root, True, GrabModeAsync, GrabModeAsync);
     for (int i = 0; i < NUM_WORKSPACES; i++) {
         XGrabKey(display, XKeysymToKeycode(display, XK_1 + i), Mod4Mask,
@@ -396,6 +413,10 @@ int main() {
                          ev.xkey.state & Mod4Mask) {
                     launch_rofi();
                 }
+                else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_k) && 
+                         ev.xkey.state & Mod4Mask) {
+                    kill_active_window();
+                }
                 else if (ev.xkey.state & Mod1Mask) {
                     Window focused;
                     int revert;
@@ -418,7 +439,7 @@ int main() {
                     for (int i = 0; i < NUM_WORKSPACES; i++) {
                         if (ev.xkey.keycode == XKeysymToKeycode(display, XK_1 + i)) {
                             switch_workspace(i);
-                            update_status_bar();  // Refresh status bar for active color
+                            update_status_bar();
                             break;
                         }
                     }
