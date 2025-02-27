@@ -96,6 +96,15 @@ void handle_mouse_resize(XButtonEvent *ev) {
     XUngrabPointer(display, CurrentTime);
 }
 
+void launch_kitty() {
+    if (fork() == 0) {
+        execlp("kitty", "kitty", NULL);
+        // If execlp fails
+        perror("Failed to launch kitty");
+        exit(1);
+    }
+}
+
 int main() {
     display = XOpenDisplay(NULL);
     if (!display) {
@@ -113,6 +122,9 @@ int main() {
     XGrabKey(display, XKeysymToKeycode(display, XK_Up), Mod1Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_Down), Mod1Mask, 
+            root, True, GrabModeAsync, GrabModeAsync);
+    // Windows key (Mod4Mask) + Q to launch kitty
+    XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
     
     // Mouse binding
@@ -135,6 +147,10 @@ int main() {
                 if (ev.xkey.keycode == XKeysymToKeycode(display, XK_Tab) && 
                     ev.xkey.state & Mod1Mask) {
                     switch_window();
+                }
+                else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_q) && 
+                         ev.xkey.state & Mod4Mask) {
+                    launch_kitty();
                 }
                 else if (ev.xkey.state & Mod1Mask) {
                     Window focused;
