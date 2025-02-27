@@ -161,9 +161,18 @@ int main() {
                 }
                 break;
             case ConfigureRequest:
-                XConfigureWindow(display, ev.xconfigurerequest.window,
-                               ev.xconfigurerequest.value_mask,
-                               &ev.xconfigurerequest);
+                {
+                    XWindowChanges wc;
+                    wc.x = ev.xconfigurerequest.x;
+                    wc.y = ev.xconfigurerequest.y;
+                    wc.width = ev.xconfigurerequest.width;
+                    wc.height = ev.xconfigurerequest.height;
+                    wc.border_width = ev.xconfigurerequest.border_width;
+                    wc.sibling = ev.xconfigurerequest.above;
+                    wc.stack_mode = ev.xconfigurerequest.detail;
+                    XConfigureWindow(display, ev.xconfigurerequest.window,
+                                   ev.xconfigurerequest.value_mask, &wc);
+                }
                 break;
         }
     }
