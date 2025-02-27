@@ -14,10 +14,10 @@
 
 /* Workspace Logos */
 static const char *WORKSPACE_LOGOS[] = {
-    "⚙️ ",  // Workspace 1: Gear
-    "📝 ",  // Workspace 2: Memo
-    "🌐 ",  // Workspace 3: Globe
-    "🎮 "   // Workspace 4: Gamepad
+    "   ",  // Workspace 1: Gear
+    "󰈹   ",  // Workspace 2: Memo
+    "   ",  // Workspace 3: Globe
+    "   "   // Workspace 4: Gamepad
 };
 
 /* Keybindings */

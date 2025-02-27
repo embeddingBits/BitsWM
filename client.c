@@ -1,4 +1,4 @@
-#include "wm.h"
+#include "bitswm.h"
 #include "config.h"
 #include <stdlib.h>
 
