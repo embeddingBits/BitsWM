@@ -10,10 +10,11 @@
 
 #define MAX_WINDOWS 100
 #define GAP 15
-#define BAR_HEIGHT 24
+#define BAR_HEIGHT 35
 #define NUM_WORKSPACES 4
 #define NORD0 0x2E3440  // Background color
 #define NORD4 0xD8DEE9  // Text color
+#define NORD8 0x  // Active workspace color (cyan)
 
 typedef struct {
     Window window;
@@ -29,7 +30,8 @@ int screen_width, screen_height;
 int current_workspace = 0;
 XftFont *status_font;
 XftDraw *xft_draw;
-XftColor xft_color;
+XftColor xft_color;       // Regular text color (NORD4)
+XftColor xft_active_color; // Active workspace color (NORD8)
 
 void create_status_bar() {
     status_bar = XCreateSimpleWindow(display, root, GAP, GAP, screen_width - 2 * GAP, BAR_HEIGHT,
@@ -39,7 +41,7 @@ void create_status_bar() {
     XMapWindow(display, status_bar);
 
     status_font = XftFontOpenName(display, DefaultScreen(display), 
-                                 "CaskaydiaMono Nerd Font:size=10");
+                                 "CaskaydiaMono Nerd Font:size=22");
     if (!status_font) {
         fprintf(stderr, "Failed to load font 'CaskaydiaMono Nerd Font'\n");
         status_font = XftFontOpenName(display, DefaultScreen(display), "fixed");
@@ -49,7 +51,10 @@ void create_status_bar() {
                             DefaultColormap(display, DefaultScreen(display)));
     XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
                      DefaultColormap(display, DefaultScreen(display)),
-                     "#D8DEE9", &xft_color);
+                     "#D8DEE9", &xft_color);  // Regular text color
+    XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
+                     DefaultColormap(display, DefaultScreen(display)),
+                     "#BF616A", &xft_active_color);  // Active workspace color
 }
 
 void tile_windows() {
@@ -257,6 +262,14 @@ void launch_firefox() {
     }
 }
 
+void launch_rofi() {
+    if (fork() == 0) {
+        execlp("rofi", "rofi", "-show", "drun", NULL);
+        perror("Failed to launch rofi");
+        exit(1);
+    }
+}
+
 void switch_workspace(int new_workspace) {
     if (new_workspace >= 0 && new_workspace < NUM_WORKSPACES) {
         current_workspace = new_workspace;
@@ -265,28 +278,32 @@ void switch_workspace(int new_workspace) {
 }
 
 void update_status_bar() {
-    char workspaces[32] = "";
     char status[256];
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
-    int battery = 75;
-    int volume = 50;
-    
-    for (int i = 0; i < NUM_WORKSPACES; i++) {
-        char ws[8];
-        snprintf(ws, sizeof(ws), "[%d] ", i + 1);
-        strcat(workspaces, ws);
-    }
+    int battery = 75;  // Placeholder
+    int volume = 50;   // Placeholder
     
     snprintf(status, sizeof(status), "%d%% | Vol: %d%% | %02d:%02d",
              battery, volume, t->tm_hour, t->tm_min);
     
     XClearWindow(display, status_bar);
     
-    XftDrawStringUtf8(xft_draw, &xft_color, status_font, 10, BAR_HEIGHT - 6,
-                     (FcChar8 *)workspaces, strlen(workspaces));
+    // Draw workspaces
+    int x_offset = 10;
+    for (int i = 0; i < NUM_WORKSPACES; i++) {
+        char ws[8];
+        snprintf(ws, sizeof(ws), "[%d] ", i + 1);
+        XftColor *color = (i == current_workspace) ? &xft_active_color : &xft_color;
+        XftDrawStringUtf8(xft_draw, color, status_font, x_offset, BAR_HEIGHT - 6,
+                         (FcChar8 *)ws, strlen(ws));
+        XGlyphInfo extents;
+        XftTextExtentsUtf8(display, status_font, (FcChar8 *)ws, strlen(ws), &extents);
+        x_offset += extents.width;
+    }
     
+    // Draw status text (battery, volume, time)
     XGlyphInfo extents;
     XftTextExtentsUtf8(display, status_font, (FcChar8 *)status, strlen(status), &extents);
     int status_width = extents.width;
@@ -298,7 +315,13 @@ void update_status_bar() {
 void cleanup() {
     if (status_font) XftFontClose(display, status_font);
     if (xft_draw) XftDrawDestroy(xft_draw);
-    if (display) XCloseDisplay(display);
+    if (display) {
+        XftColorFree(display, DefaultVisual(display, DefaultScreen(display)),
+                    DefaultColormap(display, DefaultScreen(display)), &xft_color);
+        XftColorFree(display, DefaultVisual(display, DefaultScreen(display)),
+                    DefaultColormap(display, DefaultScreen(display)), &xft_active_color);
+        XCloseDisplay(display);
+    }
 }
 
 int main() {
@@ -327,7 +350,9 @@ int main() {
     XGrabKey(display, XKeysymToKeycode(display, XK_t), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_f), Mod4Mask, 
-            root, True, GrabModeAsync, GrabModeAsync);  // New: Win+F for Firefox
+            root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_r), Mod4Mask,  // Win+r for Rofi
+            root, True, GrabModeAsync, GrabModeAsync);
     for (int i = 0; i < NUM_WORKSPACES; i++) {
         XGrabKey(display, XKeysymToKeycode(display, XK_1 + i), Mod4Mask,
                 root, True, GrabModeAsync, GrabModeAsync);
@@ -365,7 +390,11 @@ int main() {
                 }
                 else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_f) && 
                          ev.xkey.state & Mod4Mask) {
-                    launch_firefox();  // New: Win+F launches Firefox
+                    launch_firefox();
+                }
+                else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_r) && 
+                         ev.xkey.state & Mod4Mask) {
+                    launch_rofi();
                 }
                 else if (ev.xkey.state & Mod1Mask) {
                     Window focused;
@@ -389,6 +418,7 @@ int main() {
                     for (int i = 0; i < NUM_WORKSPACES; i++) {
                         if (ev.xkey.keycode == XKeysymToKeycode(display, XK_1 + i)) {
                             switch_workspace(i);
+                            update_status_bar();  // Refresh status bar for active color
                             break;
                         }
                     }
