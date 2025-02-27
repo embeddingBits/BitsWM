@@ -60,31 +60,39 @@ void tile_windows() {
 }
 
 void add_window(Window w) {
-    if (num_clients < MAX_WINDOWS) {
-        XWindowAttributes attr;
-        XGetWindowAttributes(display, w, &attr);
-        
-        clients[num_clients] = malloc(sizeof(Client));
-        clients[num_clients]->window = w;
-        clients[num_clients]->x = attr.x;
-        clients[num_clients]->y = attr.y;
-        clients[num_clients]->width = attr.width;
-        clients[num_clients]->height = attr.height;
-        
-        XSelectInput(display, w, EnterWindowMask | FocusChangeMask | 
-                    PropertyChangeMask | StructureNotifyMask);
-        XMapWindow(display, w);
-        num_clients++;
-        tile_windows();
+    if (num_clients >= MAX_WINDOWS) return;  // Prevent overflow
+    
+    XWindowAttributes attr;
+    XGetWindowAttributes(display, w, &attr);
+    
+    clients[num_clients] = malloc(sizeof(Client));
+    if (!clients[num_clients]) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return;
     }
+    
+    clients[num_clients]->window = w;
+    clients[num_clients]->x = attr.x;
+    clients[num_clients]->y = attr.y;
+    clients[num_clients]->width = attr.width;
+    clients[num_clients]->height = attr.height;
+    
+    XSelectInput(display, w, EnterWindowMask | FocusChangeMask | 
+                PropertyChangeMask | StructureNotifyMask);
+    XMapWindow(display, w);
+    num_clients++;
+    
+    // Automatically resize all windows with the new layout
+    tile_windows();
 }
 
 void remove_window(Window w) {
     for (int i = 0; i < num_clients; i++) {
         if (clients[i]->window == w) {
             free(clients[i]);
-            clients[i] = clients[num_clients - 1];
+            clients[i] = clients[num_clients - 1];  // Replace with last client
             num_clients--;
+            // Automatically resize remaining windows
             tile_windows();
             break;
         }
@@ -234,7 +242,7 @@ int main() {
                     wc.stack_mode = ev.xconfigurerequest.detail;
                     XConfigureWindow(display, ev.xconfigurerequest.window,
                                    ev.xconfigurerequest.value_mask, &wc);
-                    tile_windows();
+                    tile_windows();  // Ensure tiling after configure requests
                 }
                 break;
         }
