@@ -4,96 +4,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+#include <time.h>
 
 #define MAX_WINDOWS 100
-#define GAP 15  // 15px gap between windows and screen edges
+#define GAP 15
+#define BAR_HEIGHT 20
+#define NUM_WORKSPACES 4
 
 typedef struct {
     Window window;
     int x, y, width, height;
+    int workspace;  // Which workspace this window belongs to
 } Client;
 
 Display *display;
-Window root;
+Window root, status_bar;
 Client *clients[MAX_WINDOWS];
 int num_clients = 0;
 int screen_width, screen_height;
+int current_workspace = 0;  // Active workspace (0-3)
+
+// Function prototypes
+void update_status_bar();
+
+void create_status_bar() {
+    status_bar = XCreateSimpleWindow(display, root, 0, 0, screen_width, BAR_HEIGHT,
+                                    0, BlackPixel(display, DefaultScreen(display)),
+                                    WhitePixel(display, DefaultScreen(display)));
+    XSelectInput(display, status_bar, ExposureMask);
+    XMapWindow(display, status_bar);
+}
 
 void tile_windows() {
     if (num_clients == 0) return;
 
-    // Account for gaps in total usable space
-    int usable_width = screen_width - 2 * GAP;  // Gaps on left and right edges
-    int usable_height = screen_height - 2 * GAP;  // Gaps on top and bottom edges
+    int usable_width = screen_width - 2 * GAP;
+    int usable_height = screen_height - 2 * GAP - BAR_HEIGHT;  // Account for status bar
 
-    if (num_clients == 1) {
-        // Single window takes full screen with gaps
-        clients[0]->x = GAP;
-        clients[0]->y = GAP;
-        clients[0]->width = usable_width;
-        clients[0]->height = usable_height;
-        XConfigureWindow(display, clients[0]->window,
-                        CWX | CWY | CWWidth | CWHeight,
-                        &(XWindowChanges){
-                            .x = clients[0]->x,
-                            .y = clients[0]->y,
-                            .width = clients[0]->width,
-                            .height = clients[0]->height
-                        });
-    } else if (num_clients == 2) {
-        // Two windows: 50/50 split with gap between
-        int master_width = (usable_width - GAP) / 2;  // Gap between windows
-        clients[0]->x = GAP;
-        clients[0]->y = GAP;
-        clients[0]->width = master_width;
-        clients[0]->height = usable_height;
-        XConfigureWindow(display, clients[0]->window,
-                        CWX | CWY | CWWidth | CWHeight,
-                        &(XWindowChanges){
-                            .x = clients[0]->x,
-                            .y = clients[0]->y,
-                            .width = clients[0]->width,
-                            .height = clients[0]->height
-                        });
+    int visible_clients = 0;
+    for (int i = 0; i < num_clients; i++) {
+        if (clients[i]->workspace == current_workspace) visible_clients++;
+    }
 
-        clients[1]->x = GAP + master_width + GAP;  // Gap between windows
-        clients[1]->y = GAP;
-        clients[1]->width = master_width;
-        clients[1]->height = usable_height;
-        XConfigureWindow(display, clients[1]->window,
-                        CWX | CWY | CWWidth | CWHeight,
-                        &(XWindowChanges){
-                            .x = clients[1]->x,
-                            .y = clients[1]->y,
-                            .width = clients[1]->width,
-                            .height = clients[1]->height
-                        });
-    } else {
-        // 3+ windows: Master 50%, stack splits remaining 50% with gaps
-        int master_width = (usable_width - GAP) / 2;  // Gap between master and stack
-        int stack_width = master_width;
-        int stack_height = (usable_height - (num_clients - 2) * GAP) / (num_clients - 1);  // Gaps between stack windows
+    if (visible_clients == 0) return;
 
-        // Master window
-        clients[0]->x = GAP;
-        clients[0]->y = GAP;
-        clients[0]->width = master_width;
-        clients[0]->height = usable_height;
-        XConfigureWindow(display, clients[0]->window,
-                        CWX | CWY | CWWidth | CWHeight,
-                        &(XWindowChanges){
-                            .x = clients[0]->x,
-                            .y = clients[0]->y,
-                            .width = clients[0]->width,
-                            .height = clients[0]->height
-                        });
-
-        // Stack windows
-        for (int i = 1; i < num_clients; i++) {
-            clients[i]->x = GAP + master_width + GAP;  // Gap between master and stack
-            clients[i]->y = GAP + (i - 1) * (stack_height + GAP);  // Gaps between stack windows
-            clients[i]->width = stack_width;
-            clients[i]->height = stack_height;
+    if (visible_clients == 1) {
+        for (int i = 0; i < num_clients; i++) {
+            if (clients[i]->workspace != current_workspace) {
+                XUnmapWindow(display, clients[i]->window);
+                continue;
+            }
+            clients[i]->x = GAP;
+            clients[i]->y = GAP + BAR_HEIGHT;
+            clients[i]->width = usable_width;
+            clients[i]->height = usable_height;
             XConfigureWindow(display, clients[i]->window,
                             CWX | CWY | CWWidth | CWHeight,
                             &(XWindowChanges){
@@ -102,8 +67,72 @@ void tile_windows() {
                                 .width = clients[i]->width,
                                 .height = clients[i]->height
                             });
+            XMapWindow(display, clients[i]->window);
+        }
+    } else if (visible_clients == 2) {
+        int master_width = (usable_width - GAP) / 2;
+        int mapped = 0;
+        for (int i = 0; i < num_clients; i++) {
+            if (clients[i]->workspace != current_workspace) {
+                XUnmapWindow(display, clients[i]->window);
+                continue;
+            }
+            if (mapped == 0) {
+                clients[i]->x = GAP;
+                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->width = master_width;
+                clients[i]->height = usable_height;
+            } else {
+                clients[i]->x = GAP + master_width + GAP;
+                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->width = master_width;
+                clients[i]->height = usable_height;
+            }
+            XConfigureWindow(display, clients[i]->window,
+                            CWX | CWY | CWWidth | CWHeight,
+                            &(XWindowChanges){
+                                .x = clients[i]->x,
+                                .y = clients[i]->y,
+                                .width = clients[i]->width,
+                                .height = clients[i]->height
+                            });
+            XMapWindow(display, clients[i]->window);
+            mapped++;
+        }
+    } else {
+        int master_width = (usable_width - GAP) / 2;
+        int stack_width = master_width;
+        int stack_height = (usable_height - (visible_clients - 2) * GAP) / (visible_clients - 1);
+        int mapped = 0;
+        for (int i = 0; i < num_clients; i++) {
+            if (clients[i]->workspace != current_workspace) {
+                XUnmapWindow(display, clients[i]->window);
+                continue;
+            }
+            if (mapped == 0) {
+                clients[i]->x = GAP;
+                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->width = master_width;
+                clients[i]->height = usable_height;
+            } else {
+                clients[i]->x = GAP + master_width + GAP;
+                clients[i]->y = GAP + BAR_HEIGHT + (mapped - 1) * (stack_height + GAP);
+                clients[i]->width = stack_width;
+                clients[i]->height = stack_height;
+            }
+            XConfigureWindow(display, clients[i]->window,
+                            CWX | CWY | CWWidth | CWHeight,
+                            &(XWindowChanges){
+                                .x = clients[i]->x,
+                                .y = clients[i]->y,
+                                .width = clients[i]->width,
+                                .height = clients[i]->height
+                            });
+            XMapWindow(display, clients[i]->window);
+            mapped++;
         }
     }
+    update_status_bar();
 }
 
 void add_window(Window w) {
@@ -123,10 +152,7 @@ void add_window(Window w) {
     clients[num_clients]->y = attr.y;
     clients[num_clients]->width = attr.width;
     clients[num_clients]->height = attr.height;
-    
-    XSelectInput(display, w, EnterWindowMask | FocusChangeMask | 
-                PropertyChangeMask | StructureNotifyMask);
-    XMapWindow(display, w);
+    clients[num_clients]->workspace = current_workspace;  // New windows go to current workspace
     num_clients++;
     tile_windows();
 }
@@ -200,6 +226,31 @@ void launch_kitty() {
     }
 }
 
+void switch_workspace(int new_workspace) {
+    if (new_workspace >= 0 && new_workspace < NUM_WORKSPACES) {
+        current_workspace = new_workspace;
+        tile_windows();
+    }
+}
+
+void update_status_bar() {
+    char status[256];
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    
+    // Simulate battery and volume (replace with actual system calls if desired)
+    int battery = 75;  // Placeholder
+    int volume = 50;   // Placeholder
+    
+    snprintf(status, sizeof(status), "[%d] %d%% | Vol: %d%% | %02d:%02d | WS: %d/%d",
+             current_workspace + 1, battery, volume, t->tm_hour, t->tm_min,
+             current_workspace + 1, NUM_WORKSPACES);
+    
+    XClearWindow(display, status_bar);
+    XDrawString(display, status_bar, DefaultGC(display, DefaultScreen(display)),
+                10, BAR_HEIGHT - 5, status, strlen(status));
+}
+
 int main() {
     display = XOpenDisplay(NULL);
     if (!display) {
@@ -224,11 +275,18 @@ int main() {
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
+    // Workspace switching (Win + 1, 2, 3, 4)
+    for (int i = 0; i < NUM_WORKSPACES; i++) {
+        XGrabKey(display, XKeysymToKeycode(display, XK_1 + i), Mod4Mask,
+                root, True, GrabModeAsync, GrabModeAsync);
+    }
     
     // Mouse binding
     XGrabButton(display, 1, Mod1Mask, root, True, 
                ButtonPressMask, GrabModeAsync, GrabModeAsync, 
                None, None);
+
+    create_status_bar();
 
     XEvent ev;
     while (1) {
@@ -268,6 +326,14 @@ int main() {
                         }
                     }
                 }
+                else if (ev.xkey.state & Mod4Mask) {
+                    for (int i = 0; i < NUM_WORKSPACES; i++) {
+                        if (ev.xkey.keycode == XKeysymToKeycode(display, XK_1 + i)) {
+                            switch_workspace(i);
+                            break;
+                        }
+                    }
+                }
                 break;
             case ButtonPress:
                 if (ev.xbutton.state & Mod1Mask) {
@@ -287,6 +353,11 @@ int main() {
                     XConfigureWindow(display, ev.xconfigurerequest.window,
                                    ev.xconfigurerequest.value_mask, &wc);
                     tile_windows();
+                }
+                break;
+            case Expose:
+                if (ev.xexpose.window == status_bar) {
+                    update_status_bar();
                 }
                 break;
         }
