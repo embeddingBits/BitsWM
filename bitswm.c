@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #define MAX_WINDOWS 100
+#define MASTER_WIDTH_FACTOR 0.55  // Master window takes 55% of screen width
 
 typedef struct {
     Window window;
@@ -21,12 +22,32 @@ int screen_width, screen_height;
 void tile_windows() {
     if (num_clients == 0) return;
 
-    int window_height = screen_height / num_clients;
-    for (int i = 0; i < num_clients; i++) {
-        clients[i]->x = 0;
-        clients[i]->y = i * window_height;
-        clients[i]->width = screen_width;
-        clients[i]->height = window_height;
+    int master_width = screen_width * MASTER_WIDTH_FACTOR;
+    int stack_width = screen_width - master_width;
+    int stack_height = (num_clients > 1) ? screen_height / (num_clients - 1) : 0;
+
+    // Master window (first window)
+    if (num_clients >= 1) {
+        clients[0]->x = 0;
+        clients[0]->y = 0;
+        clients[0]->width = master_width;
+        clients[0]->height = screen_height;
+        XConfigureWindow(display, clients[0]->window,
+                        CWX | CWY | CWWidth | CWHeight,
+                        &(XWindowChanges){
+                            .x = clients[0]->x,
+                            .y = clients[0]->y,
+                            .width = clients[0]->width,
+                            .height = clients[0]->height
+                        });
+    }
+
+    // Stack windows (remaining windows)
+    for (int i = 1; i < num_clients; i++) {
+        clients[i]->x = master_width;
+        clients[i]->y = (i - 1) * stack_height;
+        clients[i]->width = stack_width;
+        clients[i]->height = stack_height;
         XConfigureWindow(display, clients[i]->window,
                         CWX | CWY | CWWidth | CWHeight,
                         &(XWindowChanges){
@@ -54,7 +75,7 @@ void add_window(Window w) {
                     PropertyChangeMask | StructureNotifyMask);
         XMapWindow(display, w);
         num_clients++;
-        tile_windows();  // Re-tile after adding a new window
+        tile_windows();
     }
 }
 
@@ -64,7 +85,7 @@ void remove_window(Window w) {
             free(clients[i]);
             clients[i] = clients[num_clients - 1];
             num_clients--;
-            tile_windows();  // Re-tile after removing a window
+            tile_windows();
             break;
         }
     }
@@ -112,7 +133,6 @@ void handle_mouse_resize(XButtonEvent *ev) {
             int new_height = attr.height + (event.xmotion.y_root - y_start);
             if (new_width > 50 && new_height > 50) {
                 resize_window(w, attr.x, attr.y, new_width, new_height);
-                // After manual resize, we might want to disable auto-tiling temporarily
             }
         }
     } while (event.type != ButtonRelease);
@@ -214,7 +234,7 @@ int main() {
                     wc.stack_mode = ev.xconfigurerequest.detail;
                     XConfigureWindow(display, ev.xconfigurerequest.window,
                                    ev.xconfigurerequest.value_mask, &wc);
-                    tile_windows();  // Re-tile after configure request
+                    tile_windows();
                 }
                 break;
         }
