@@ -9,7 +9,7 @@
 
 #define MAX_WINDOWS 100
 #define GAP 15
-#define BAR_HEIGHT 24  // Nord-themed bar height
+#define BAR_HEIGHT 24
 #define NUM_WORKSPACES 4
 #define NORD0 0x2E3440  // Background color
 #define NORD4 0xD8DEE9  // Text color
@@ -29,7 +29,7 @@ int current_workspace = 0;
 
 void create_status_bar() {
     status_bar = XCreateSimpleWindow(display, root, 0, 0, screen_width, BAR_HEIGHT,
-                                    0, NORD0, NORD0);  // Nord0 background
+                                    0, NORD0, NORD0);
     XSetWindowBackground(display, status_bar, NORD0);
     XSelectInput(display, status_bar, ExposureMask);
     XMapWindow(display, status_bar);
@@ -258,11 +258,18 @@ void update_status_bar() {
     // Draw workspaces on left
     XDrawString(display, status_bar, gc, 10, BAR_HEIGHT - 6, workspaces, strlen(workspaces));
     
-    // Draw status on right
-    int status_width = XTextWidth(DefaultFontStruct(display, DefaultScreen(display)),
-                                 status, strlen(status));
-    XDrawString(display, status_bar, gc, screen_width - status_width - 10,
-                BAR_HEIGHT - 6, status, strlen(status));
+    // Get font info from GC and calculate text width for right alignment
+    XFontStruct *font_info = XQueryFont(display, XGContextFromGC(gc));
+    if (font_info) {
+        int status_width = XTextWidth(font_info, status, strlen(status));
+        XDrawString(display, status_bar, gc, screen_width - status_width - 10,
+                    BAR_HEIGHT - 6, status, strlen(status));
+        XFreeFontInfo(NULL, font_info, 1);
+    } else {
+        // Fallback if font info isn't available
+        XDrawString(display, status_bar, gc, screen_width - 100, BAR_HEIGHT - 6, 
+                    status, strlen(status));
+    }
 }
 
 int main() {
