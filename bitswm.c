@@ -9,13 +9,15 @@
 
 #define MAX_WINDOWS 100
 #define GAP 15
-#define BAR_HEIGHT 20
+#define BAR_HEIGHT 24  // Nord-themed bar height
 #define NUM_WORKSPACES 4
+#define NORD0 0x2E3440  // Background color
+#define NORD4 0xD8DEE9  // Text color
 
 typedef struct {
     Window window;
     int x, y, width, height;
-    int workspace;  // Which workspace this window belongs to
+    int workspace;
 } Client;
 
 Display *display;
@@ -23,15 +25,12 @@ Window root, status_bar;
 Client *clients[MAX_WINDOWS];
 int num_clients = 0;
 int screen_width, screen_height;
-int current_workspace = 0;  // Active workspace (0-3)
-
-// Function prototypes
-void update_status_bar();
+int current_workspace = 0;
 
 void create_status_bar() {
     status_bar = XCreateSimpleWindow(display, root, 0, 0, screen_width, BAR_HEIGHT,
-                                    0, BlackPixel(display, DefaultScreen(display)),
-                                    WhitePixel(display, DefaultScreen(display)));
+                                    0, NORD0, NORD0);  // Nord0 background
+    XSetWindowBackground(display, status_bar, NORD0);
     XSelectInput(display, status_bar, ExposureMask);
     XMapWindow(display, status_bar);
 }
@@ -40,7 +39,7 @@ void tile_windows() {
     if (num_clients == 0) return;
 
     int usable_width = screen_width - 2 * GAP;
-    int usable_height = screen_height - 2 * GAP - BAR_HEIGHT;  // Account for status bar
+    int usable_height = screen_height - 2 * GAP - BAR_HEIGHT;
 
     int visible_clients = 0;
     for (int i = 0; i < num_clients; i++) {
@@ -132,7 +131,6 @@ void tile_windows() {
             mapped++;
         }
     }
-    update_status_bar();
 }
 
 void add_window(Window w) {
@@ -152,7 +150,7 @@ void add_window(Window w) {
     clients[num_clients]->y = attr.y;
     clients[num_clients]->width = attr.width;
     clients[num_clients]->height = attr.height;
-    clients[num_clients]->workspace = current_workspace;  // New windows go to current workspace
+    clients[num_clients]->workspace = current_workspace;
     num_clients++;
     tile_windows();
 }
@@ -234,21 +232,37 @@ void switch_workspace(int new_workspace) {
 }
 
 void update_status_bar() {
+    char workspaces[32] = "";
     char status[256];
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
-    // Simulate battery and volume (replace with actual system calls if desired)
     int battery = 75;  // Placeholder
     int volume = 50;   // Placeholder
     
-    snprintf(status, sizeof(status), "[%d] %d%% | Vol: %d%% | %02d:%02d | WS: %d/%d",
-             current_workspace + 1, battery, volume, t->tm_hour, t->tm_min,
-             current_workspace + 1, NUM_WORKSPACES);
+    // Workspace numbers on left
+    for (int i = 0; i < NUM_WORKSPACES; i++) {
+        char ws[8];
+        snprintf(ws, sizeof(ws), "[%d] ", i + 1);
+        strcat(workspaces, ws);
+    }
+    
+    // Status info on right
+    snprintf(status, sizeof(status), "%d%% | Vol: %d%% | %02d:%02d",
+             battery, volume, t->tm_hour, t->tm_min);
     
     XClearWindow(display, status_bar);
-    XDrawString(display, status_bar, DefaultGC(display, DefaultScreen(display)),
-                10, BAR_HEIGHT - 5, status, strlen(status));
+    GC gc = DefaultGC(display, DefaultScreen(display));
+    XSetForeground(display, gc, NORD4);  // Nord4 text color
+    
+    // Draw workspaces on left
+    XDrawString(display, status_bar, gc, 10, BAR_HEIGHT - 6, workspaces, strlen(workspaces));
+    
+    // Draw status on right
+    int status_width = XTextWidth(DefaultFontStruct(display, DefaultScreen(display)),
+                                 status, strlen(status));
+    XDrawString(display, status_bar, gc, screen_width - status_width - 10,
+                BAR_HEIGHT - 6, status, strlen(status));
 }
 
 int main() {
@@ -275,13 +289,11 @@ int main() {
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
-    // Workspace switching (Win + 1, 2, 3, 4)
     for (int i = 0; i < NUM_WORKSPACES; i++) {
         XGrabKey(display, XKeysymToKeycode(display, XK_1 + i), Mod4Mask,
                 root, True, GrabModeAsync, GrabModeAsync);
     }
     
-    // Mouse binding
     XGrabButton(display, 1, Mod1Mask, root, True, 
                ButtonPressMask, GrabModeAsync, GrabModeAsync, 
                None, None);
