@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #define MAX_WINDOWS 100
+#define GAP 15  // 15px gap between windows and screen edges
 
 typedef struct {
     Window window;
@@ -21,12 +22,16 @@ int screen_width, screen_height;
 void tile_windows() {
     if (num_clients == 0) return;
 
+    // Account for gaps in total usable space
+    int usable_width = screen_width - 2 * GAP;  // Gaps on left and right edges
+    int usable_height = screen_height - 2 * GAP;  // Gaps on top and bottom edges
+
     if (num_clients == 1) {
-        // Single window takes full screen
-        clients[0]->x = 0;
-        clients[0]->y = 0;
-        clients[0]->width = screen_width;
-        clients[0]->height = screen_height;
+        // Single window takes full screen with gaps
+        clients[0]->x = GAP;
+        clients[0]->y = GAP;
+        clients[0]->width = usable_width;
+        clients[0]->height = usable_height;
         XConfigureWindow(display, clients[0]->window,
                         CWX | CWY | CWWidth | CWHeight,
                         &(XWindowChanges){
@@ -36,11 +41,12 @@ void tile_windows() {
                             .height = clients[0]->height
                         });
     } else if (num_clients == 2) {
-        // Two windows: 50/50 split, full height
-        clients[0]->x = 0;
-        clients[0]->y = 0;
-        clients[0]->width = screen_width / 2;
-        clients[0]->height = screen_height;
+        // Two windows: 50/50 split with gap between
+        int master_width = (usable_width - GAP) / 2;  // Gap between windows
+        clients[0]->x = GAP;
+        clients[0]->y = GAP;
+        clients[0]->width = master_width;
+        clients[0]->height = usable_height;
         XConfigureWindow(display, clients[0]->window,
                         CWX | CWY | CWWidth | CWHeight,
                         &(XWindowChanges){
@@ -50,10 +56,10 @@ void tile_windows() {
                             .height = clients[0]->height
                         });
 
-        clients[1]->x = screen_width / 2;
-        clients[1]->y = 0;
-        clients[1]->width = screen_width / 2;
-        clients[1]->height = screen_height;
+        clients[1]->x = GAP + master_width + GAP;  // Gap between windows
+        clients[1]->y = GAP;
+        clients[1]->width = master_width;
+        clients[1]->height = usable_height;
         XConfigureWindow(display, clients[1]->window,
                         CWX | CWY | CWWidth | CWHeight,
                         &(XWindowChanges){
@@ -63,16 +69,16 @@ void tile_windows() {
                             .height = clients[1]->height
                         });
     } else {
-        // 3+ windows: Master 50%, stack splits remaining 50% vertically
-        int master_width = screen_width / 2;
-        int stack_width = screen_width / 2;
-        int stack_height = screen_height / (num_clients - 1);
+        // 3+ windows: Master 50%, stack splits remaining 50% with gaps
+        int master_width = (usable_width - GAP) / 2;  // Gap between master and stack
+        int stack_width = master_width;
+        int stack_height = (usable_height - (num_clients - 2) * GAP) / (num_clients - 1);  // Gaps between stack windows
 
         // Master window
-        clients[0]->x = 0;
-        clients[0]->y = 0;
+        clients[0]->x = GAP;
+        clients[0]->y = GAP;
         clients[0]->width = master_width;
-        clients[0]->height = screen_height;
+        clients[0]->height = usable_height;
         XConfigureWindow(display, clients[0]->window,
                         CWX | CWY | CWWidth | CWHeight,
                         &(XWindowChanges){
@@ -84,8 +90,8 @@ void tile_windows() {
 
         // Stack windows
         for (int i = 1; i < num_clients; i++) {
-            clients[i]->x = master_width;
-            clients[i]->y = (i - 1) * stack_height;
+            clients[i]->x = GAP + master_width + GAP;  // Gap between master and stack
+            clients[i]->y = GAP + (i - 1) * (stack_height + GAP);  // Gaps between stack windows
             clients[i]->width = stack_width;
             clients[i]->height = stack_height;
             XConfigureWindow(display, clients[i]->window,
@@ -122,7 +128,7 @@ void add_window(Window w) {
                 PropertyChangeMask | StructureNotifyMask);
     XMapWindow(display, w);
     num_clients++;
-    tile_windows();  // Automatically resize all windows
+    tile_windows();
 }
 
 void remove_window(Window w) {
@@ -131,7 +137,7 @@ void remove_window(Window w) {
             free(clients[i]);
             clients[i] = clients[num_clients - 1];
             num_clients--;
-            tile_windows();  // Automatically resize remaining windows
+            tile_windows();
             break;
         }
     }
