@@ -1,6 +1,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
+#include <X11/Xft/Xft.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -26,20 +27,37 @@ Client *clients[MAX_WINDOWS];
 int num_clients = 0;
 int screen_width, screen_height;
 int current_workspace = 0;
+XftFont *status_font;
+XftDraw *xft_draw;
+XftColor xft_color;
 
 void create_status_bar() {
-    status_bar = XCreateSimpleWindow(display, root, 0, 0, screen_width, BAR_HEIGHT,
+    status_bar = XCreateSimpleWindow(display, root, GAP, GAP, screen_width - 2 * GAP, BAR_HEIGHT,
                                     0, NORD0, NORD0);
     XSetWindowBackground(display, status_bar, NORD0);
     XSelectInput(display, status_bar, ExposureMask);
     XMapWindow(display, status_bar);
+
+    // Initialize Xft
+    status_font = XftFontOpenName(display, DefaultScreen(display), 
+                                 "CaskaydiaMono Nerd Font:size=10");
+    if (!status_font) {
+        fprintf(stderr, "Failed to load font 'CaskaydiaMono Nerd Font'\n");
+        status_font = XftFontOpenName(display, DefaultScreen(display), "fixed");  // Fallback
+    }
+    xft_draw = XftDrawCreate(display, status_bar, 
+                            DefaultVisual(display, DefaultScreen(display)),
+                            DefaultColormap(display, DefaultScreen(display)));
+    XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
+                     DefaultColormap(display, DefaultScreen(display)),
+                     "#D8DEE9", &xft_color);  // Nord4
 }
 
 void tile_windows() {
     if (num_clients == 0) return;
 
     int usable_width = screen_width - 2 * GAP;
-    int usable_height = screen_height - 2 * GAP - BAR_HEIGHT;
+    int usable_height = screen_height - 3 * GAP - BAR_HEIGHT;  // Extra GAP for bar
 
     int visible_clients = 0;
     for (int i = 0; i < num_clients; i++) {
@@ -55,7 +73,7 @@ void tile_windows() {
                 continue;
             }
             clients[i]->x = GAP;
-            clients[i]->y = GAP + BAR_HEIGHT;
+            clients[i]->y = GAP * 2 + BAR_HEIGHT;  // Below floating bar
             clients[i]->width = usable_width;
             clients[i]->height = usable_height;
             XConfigureWindow(display, clients[i]->window,
@@ -78,12 +96,12 @@ void tile_windows() {
             }
             if (mapped == 0) {
                 clients[i]->x = GAP;
-                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->y = GAP * 2 + BAR_HEIGHT;
                 clients[i]->width = master_width;
                 clients[i]->height = usable_height;
             } else {
                 clients[i]->x = GAP + master_width + GAP;
-                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->y = GAP * 2 + BAR_HEIGHT;
                 clients[i]->width = master_width;
                 clients[i]->height = usable_height;
             }
@@ -110,12 +128,12 @@ void tile_windows() {
             }
             if (mapped == 0) {
                 clients[i]->x = GAP;
-                clients[i]->y = GAP + BAR_HEIGHT;
+                clients[i]->y = GAP * 2 + BAR_HEIGHT;
                 clients[i]->width = master_width;
                 clients[i]->height = usable_height;
             } else {
                 clients[i]->x = GAP + master_width + GAP;
-                clients[i]->y = GAP + BAR_HEIGHT + (mapped - 1) * (stack_height + GAP);
+                clients[i]->y = GAP * 2 + BAR_HEIGHT + (mapped - 1) * (stack_height + GAP);
                 clients[i]->width = stack_width;
                 clients[i]->height = stack_height;
             }
@@ -237,39 +255,37 @@ void update_status_bar() {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
-    int battery = 75;  // Placeholder
-    int volume = 50;   // Placeholder
+    int battery = 75;
+    int volume = 50;
     
-    // Workspace numbers on left
     for (int i = 0; i < NUM_WORKSPACES; i++) {
         char ws[8];
         snprintf(ws, sizeof(ws), "[%d] ", i + 1);
         strcat(workspaces, ws);
     }
     
-    // Status info on right
     snprintf(status, sizeof(status), "%d%% | Vol: %d%% | %02d:%02d",
              battery, volume, t->tm_hour, t->tm_min);
     
     XClearWindow(display, status_bar);
-    GC gc = DefaultGC(display, DefaultScreen(display));
-    XSetForeground(display, gc, NORD4);  // Nord4 text color
     
     // Draw workspaces on left
-    XDrawString(display, status_bar, gc, 10, BAR_HEIGHT - 6, workspaces, strlen(workspaces));
+    XftDrawStringUtf8(xft_draw, &xft_color, status_font, 10, BAR_HEIGHT - 6,
+                     (FcChar8 *)workspaces, strlen(workspaces));
     
-    // Get font info from GC and calculate text width for right alignment
-    XFontStruct *font_info = XQueryFont(display, XGContextFromGC(gc));
-    if (font_info) {
-        int status_width = XTextWidth(font_info, status, strlen(status));
-        XDrawString(display, status_bar, gc, screen_width - status_width - 10,
-                    BAR_HEIGHT - 6, status, strlen(status));
-        XFreeFontInfo(NULL, font_info, 1);
-    } else {
-        // Fallback if font info isn't available
-        XDrawString(display, status_bar, gc, screen_width - 100, BAR_HEIGHT - 6, 
-                    status, strlen(status));
-    }
+    // Calculate status width and draw on right
+    XGlyphInfo extents;
+    XftTextExtentsUtf8(display, status_font, (FcChar8 *)status, strlen(status), &extents);
+    int status_width = extents.width;
+    XftDrawStringUtf8(xft_draw, &xft_color, status_font, 
+                     screen_width - 2 * GAP - status_width - 10, BAR_HEIGHT - 6,
+                     (FcChar8 *)status, strlen(status));
+}
+
+void cleanup() {
+    if (status_font) XftFontClose(display, status_font);
+    if (xft_draw) XftDrawDestroy(xft_draw);
+    if (display) XCloseDisplay(display);
 }
 
 int main() {
@@ -287,7 +303,6 @@ int main() {
     XSelectInput(display, root, SubstructureRedirectMask | 
                 SubstructureNotifyMask | KeyPressMask | ButtonPressMask);
     
-    // Key bindings
     XGrabKey(display, XKeysymToKeycode(display, XK_Tab), Mod1Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_Up), Mod1Mask, 
@@ -382,6 +397,6 @@ int main() {
         }
     }
     
-    XCloseDisplay(display);
+    cleanup();
     return 0;
 }
