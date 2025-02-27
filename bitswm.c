@@ -38,26 +38,25 @@ void create_status_bar() {
     XSelectInput(display, status_bar, ExposureMask);
     XMapWindow(display, status_bar);
 
-    // Initialize Xft
     status_font = XftFontOpenName(display, DefaultScreen(display), 
                                  "CaskaydiaMono Nerd Font:size=10");
     if (!status_font) {
         fprintf(stderr, "Failed to load font 'CaskaydiaMono Nerd Font'\n");
-        status_font = XftFontOpenName(display, DefaultScreen(display), "fixed");  // Fallback
+        status_font = XftFontOpenName(display, DefaultScreen(display), "fixed");
     }
     xft_draw = XftDrawCreate(display, status_bar, 
                             DefaultVisual(display, DefaultScreen(display)),
                             DefaultColormap(display, DefaultScreen(display)));
     XftColorAllocName(display, DefaultVisual(display, DefaultScreen(display)),
                      DefaultColormap(display, DefaultScreen(display)),
-                     "#D8DEE9", &xft_color);  // Nord4
+                     "#D8DEE9", &xft_color);
 }
 
 void tile_windows() {
     if (num_clients == 0) return;
 
     int usable_width = screen_width - 2 * GAP;
-    int usable_height = screen_height - 3 * GAP - BAR_HEIGHT;  // Extra GAP for bar
+    int usable_height = screen_height - 3 * GAP - BAR_HEIGHT;
 
     int visible_clients = 0;
     for (int i = 0; i < num_clients; i++) {
@@ -73,7 +72,7 @@ void tile_windows() {
                 continue;
             }
             clients[i]->x = GAP;
-            clients[i]->y = GAP * 2 + BAR_HEIGHT;  // Below floating bar
+            clients[i]->y = GAP * 2 + BAR_HEIGHT;
             clients[i]->width = usable_width;
             clients[i]->height = usable_height;
             XConfigureWindow(display, clients[i]->window,
@@ -242,6 +241,22 @@ void launch_kitty() {
     }
 }
 
+void launch_xterm() {
+    if (fork() == 0) {
+        execlp("xterm", "xterm", NULL);
+        perror("Failed to launch xterm");
+        exit(1);
+    }
+}
+
+void launch_firefox() {
+    if (fork() == 0) {
+        execlp("firefox", "firefox", NULL);
+        perror("Failed to launch firefox");
+        exit(1);
+    }
+}
+
 void switch_workspace(int new_workspace) {
     if (new_workspace >= 0 && new_workspace < NUM_WORKSPACES) {
         current_workspace = new_workspace;
@@ -269,11 +284,9 @@ void update_status_bar() {
     
     XClearWindow(display, status_bar);
     
-    // Draw workspaces on left
     XftDrawStringUtf8(xft_draw, &xft_color, status_font, 10, BAR_HEIGHT - 6,
                      (FcChar8 *)workspaces, strlen(workspaces));
     
-    // Calculate status width and draw on right
     XGlyphInfo extents;
     XftTextExtentsUtf8(display, status_font, (FcChar8 *)status, strlen(status), &extents);
     int status_width = extents.width;
@@ -311,6 +324,10 @@ int main() {
             root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, 
             root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_t), Mod4Mask, 
+            root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_f), Mod4Mask, 
+            root, True, GrabModeAsync, GrabModeAsync);  // New: Win+F for Firefox
     for (int i = 0; i < NUM_WORKSPACES; i++) {
         XGrabKey(display, XKeysymToKeycode(display, XK_1 + i), Mod4Mask,
                 root, True, GrabModeAsync, GrabModeAsync);
@@ -342,6 +359,14 @@ int main() {
                          ev.xkey.state & Mod4Mask) {
                     launch_kitty();
                 }
+                else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_t) && 
+                         ev.xkey.state & Mod4Mask) {
+                    launch_xterm();
+                }
+                else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_f) && 
+                         ev.xkey.state & Mod4Mask) {
+                    launch_firefox();  // New: Win+F launches Firefox
+                }
                 else if (ev.xkey.state & Mod1Mask) {
                     Window focused;
                     int revert;
@@ -350,11 +375,11 @@ int main() {
                         if (clients[i]->window == focused) {
                             if (ev.xkey.keycode == XKeysymToKeycode(display, XK_Up)) {
                                 resize_window(focused, clients[i]->x, clients[i]->y,
-                                           clients[i]->width, clients[i]->height + 10);
+                                             clients[i]->width, clients[i]->height + 10);
                             }
                             else if (ev.xkey.keycode == XKeysymToKeycode(display, XK_Down)) {
                                 resize_window(focused, clients[i]->x, clients[i]->y,
-                                           clients[i]->width, clients[i]->height - 10);
+                                             clients[i]->width, clients[i]->height - 10);
                             }
                             break;
                         }
